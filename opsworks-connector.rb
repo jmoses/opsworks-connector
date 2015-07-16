@@ -28,11 +28,17 @@ end
 
 conn = Fog::Compute.new(provider: 'aws')
 
-instance = conn.servers.find do |server| 
+potential = conn.servers.select do |server| 
   server.tags['opsworks:stack'] =~ options[:stack] && 
   (server.tags['opsworks:instance'] == options[:host] || server.tags['opsworks:instance'] =~ options[:host_pattern] ) &&
   server.state == 'running'
 end
+
+instance = potential.find do |server|
+  server.tags['opsworks:instance'] == ARGV[1]
+end
+
+instance ||= potential.first
 
 unless instance
   puts "Can't find #{options[:host]} in stack like #{options[:stack]}"  
@@ -45,6 +51,8 @@ unless instance.private_ip_address
   exit 1
 end
 
-cmd = "slogin ubuntu@#{instance.private_ip_address}"
+ssh_options = "-oStrictHostKeyChecking=no"
+
+cmd = "slogin #{ssh_options} ubuntu@#{instance.private_ip_address}"
 puts cmd
 exec cmd
