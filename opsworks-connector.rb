@@ -12,6 +12,15 @@ OptionParser.new do |opts|
 
   opts.on("-h", "--host HOST", "What host to use") do |host|
     options[:host] = host
+    options[:host_pattern] = /#{host}/
+  end
+
+  opts.on("-c", "--command COMMAND", "What command to run on the matching host(s)") do |cmd|
+    options[:command] = cmd
+  end
+
+  opts.on("-l", "--list", "Just list the servers") do
+    options[:list] = true
   end
 end.parse!
 
@@ -34,25 +43,41 @@ potential = conn.servers.select do |server|
   server.state == 'running'
 end
 
-instance = potential.find do |server|
-  server.tags['opsworks:instance'] == ARGV[1]
+ssh_options = "-oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null"
+if options[:list]
+  potential.each {|i| puts i.tags['opsworks:instance'] }
+elsif options[:command]
+  if potential.empty?
+    puts "Can't find any matching hosts"
+    exit
+  elsif
+    potential.each do |instance|
+      puts instance.tags['opsworks:instance']
+      puts %x(slogin #{ssh_options} ubuntu@#{instance.private_ip_address} "#{options[:command]}")
+    end
+  end
+
+else
+  instance = potential.find do |server|
+    server.tags['opsworks:instance'] == ARGV[1]
+  end
+
+
+  instance ||= potential.first
+
+  unless instance
+    puts "Can't find #{options[:host]} in stack like #{options[:stack]}"  
+    exit 1
+  end
+
+  unless instance.private_ip_address
+    puts "No IP address found for instance."
+    puts instance.inspect
+    exit 1
+  end
+
+
+  cmd = "slogin #{ssh_options} ubuntu@#{instance.private_ip_address}"
+  puts cmd
+  exec cmd
 end
-
-instance ||= potential.first
-
-unless instance
-  puts "Can't find #{options[:host]} in stack like #{options[:stack]}"  
-  exit 1
-end
-
-unless instance.private_ip_address
-  puts "No IP address found for instance."
-  puts instance.inspect
-  exit 1
-end
-
-ssh_options = "-oStrictHostKeyChecking=no"
-
-cmd = "slogin #{ssh_options} ubuntu@#{instance.private_ip_address}"
-puts cmd
-exec cmd
